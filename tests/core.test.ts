@@ -33,12 +33,11 @@ test("share text links the current game and promotes its sibling game", () => {
     question: "Can you track today's monster?",
     action: "Join the hunt!",
     url: "https://sirrio.github.io/critterdle/",
-    relatedPrompt: "Rather search the archive for spells?",
-    relatedLabel: "Play SPELLDLE",
+    relatedPrompt: "Or search the Arcane Archive for spells?",
     relatedUrl: "https://sirrio.github.io/spelldle/",
   });
 
   assert.match(text, /^\[CRITTERDLE\]\(https:\/\/sirrio\.github\.io\/critterdle\/\) #224 6\/6/);
   assert.match(text, /\[Join the hunt!\]\(https:\/\/sirrio\.github\.io\/critterdle\/\)/);
-  assert.match(text, /\[Play SPELLDLE\]\(https:\/\/sirrio\.github\.io\/spelldle\/\)$/);
+  assert.match(text, / · \[Or search the Arcane Archive for spells\?\]\(<https:\/\/sirrio\.github\.io\/spelldle\/>\)$/);
 });

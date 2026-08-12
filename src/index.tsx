@@ -48,7 +48,6 @@ export type DndleConfig<T extends DndleEntry> = {
   shareAction: string;
   relatedGame: {
     prompt: string;
-    label: string;
     url: string;
   };
   resultSummary: (entry: T) => string;
@@ -101,7 +100,7 @@ export function compareRank(value: number, target: number): Result {
   return compareNumber(value, target);
 }
 
-export function buildShareText({ brand, gameNumber, score, rows, question, action, url, relatedPrompt, relatedLabel, relatedUrl }: {
+export function buildShareText({ brand, gameNumber, score, rows, question, action, url, relatedPrompt, relatedUrl }: {
   brand: string;
   gameNumber: number;
   score: string;
@@ -110,10 +109,9 @@ export function buildShareText({ brand, gameNumber, score, rows, question, actio
   action: string;
   url: string;
   relatedPrompt: string;
-  relatedLabel: string;
   relatedUrl: string;
 }) {
-  return `[${brand}](${url}) #${gameNumber} ${score}\n${rows.join("\n")}\n\n${question}\n[${action}](${url})\n\n${relatedPrompt}\n[${relatedLabel}](${relatedUrl})`;
+  return `[${brand}](${url}) #${gameNumber} ${score}\n${rows.join("\n")}\n\n${question}\n[${action}](${url}) · [${relatedPrompt}](<${relatedUrl}>)`;
 }
 
 function Cell({ label, value, result }: { label: string; value: string; result: Result }) {
@@ -220,7 +218,6 @@ export function DailyDndle<T extends DndleEntry>({ config }: { config: DndleConf
       action: config.shareAction,
       url: config.shareUrl,
       relatedPrompt: config.relatedGame.prompt,
-      relatedLabel: config.relatedGame.label,
       relatedUrl: config.relatedGame.url,
     });
     await navigator.clipboard.writeText(text);
