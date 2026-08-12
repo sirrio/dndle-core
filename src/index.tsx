@@ -100,6 +100,10 @@ export function compareRank(value: number, target: number): Result {
   return compareNumber(value, target);
 }
 
+export function entryOptionDisabled(used: boolean, finished: boolean) {
+  return used && !finished;
+}
+
 export function buildShareText({ brand, gameNumber, score, rows, question, action, url, relatedPrompt, relatedUrl }: {
   brand: string;
   gameNumber: number;
@@ -255,7 +259,7 @@ export function DailyDndle<T extends DndleEntry>({ config }: { config: DndleConf
               const used = guesses.some((guess) => guess.name === entry.name);
               const selected = selectedName === entry.name;
               const found = won && entry.name === target.name;
-              return <button className={`spell-option${selected ? " selected" : ""}${used ? " used" : ""}${found ? " found" : ""}`} key={entry.name} onClick={() => { if (!used && !finished) setSelectedName(entry.name); }} onMouseEnter={showNames ? undefined : (event) => showTooltip(event.currentTarget, entry.name)} onMouseLeave={showNames ? undefined : () => setTooltip(null)} onFocus={showNames ? undefined : (event) => showTooltip(event.currentTarget, entry.name)} onBlur={showNames ? undefined : () => setTooltip(null)} disabled={used || finished} aria-describedby={!showNames && tooltip?.name === entry.name ? "entry-tooltip" : undefined} aria-label={entry.name} aria-pressed={selected}><span className="option-sigil">{config.renderIcon(entry)}</span>{showNames && <strong>{entry.name}</strong>}</button>;
+              return <button className={`spell-option${selected ? " selected" : ""}${used ? " used" : ""}${found ? " found" : ""}${finished ? " locked" : ""}`} key={entry.name} onClick={() => { if (!used && !finished) setSelectedName(entry.name); }} onMouseEnter={showNames ? undefined : (event) => showTooltip(event.currentTarget, entry.name)} onMouseLeave={showNames ? undefined : () => setTooltip(null)} onFocus={showNames ? undefined : (event) => showTooltip(event.currentTarget, entry.name)} onBlur={showNames ? undefined : () => setTooltip(null)} disabled={entryOptionDisabled(used, finished)} aria-disabled={used || finished} aria-describedby={!showNames && tooltip?.name === entry.name ? "entry-tooltip" : undefined} aria-label={entry.name} aria-pressed={selected}><span className="option-sigil">{config.renderIcon(entry)}</span>{showNames && <strong>{entry.name}</strong>}</button>;
             })}
           </div>
         </article>

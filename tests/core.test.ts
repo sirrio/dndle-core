@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildShareText, compareList, compareNumber, compareText, dailyGameNumber, dailyTarget } from "../src/index";
+import { buildShareText, compareList, compareNumber, compareText, dailyGameNumber, dailyTarget, entryOptionDisabled } from "../src/index";
 
 const daily = { startUtc: [2026, 0, 1] as [number, number, number], multiplier: 17, offset: 5 };
 
@@ -40,4 +40,10 @@ test("share text links the current game and promotes its sibling game", () => {
   assert.match(text, /^\[CRITTERDLE\]\(https:\/\/sirrio\.github\.io\/critterdle\/\) #224 6\/6/);
   assert.match(text, /\[Join the hunt!\]\(https:\/\/sirrio\.github\.io\/critterdle\/\)/);
   assert.match(text, / · \[Or search the Arcane Archive for spells\?\]\(<https:\/\/sirrio\.github\.io\/spelldle\/>\)$/);
+});
+
+test("finished games keep entry buttons active for name tooltips", () => {
+  assert.equal(entryOptionDisabled(true, false), true);
+  assert.equal(entryOptionDisabled(true, true), false);
+  assert.equal(entryOptionDisabled(false, true), false);
 });
