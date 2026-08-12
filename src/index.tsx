@@ -207,7 +207,7 @@ export function DailyDndle<T extends DndleEntry>({ config }: { config: DndleConf
   return (
     <main className={`${config.id}-theme`}>
       <header className="topbar" id="top">
-        <a className="brand" href="#top" aria-label={`${config.brand} home`}><span className="brand-rune">{config.brandIconUrl ? <img src={config.brandIconUrl} alt="" /> : config.brandRune}</span><strong>{config.brand}</strong></a>
+        <a className="brand" href="#top" aria-label={`${config.brand} home`}><span className="brand-rune">{config.brandIconUrl ? <img src={config.brandIconUrl} alt="" /> : config.brandRune}</span></a>
         <div className="game-tagline">{config.tagline}</div>
         <div className="header-actions">
           <div className="attempts"><strong>{guesses.length}</strong><span>/ {MAX_GUESSES}</span></div>
