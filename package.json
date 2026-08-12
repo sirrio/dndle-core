@@ -1,0 +1,27 @@
+{
+  "name": "@sirrio/dndle-core",
+  "version": "1.0.0",
+  "description": "Shared daily guessing game UI and logic for Spelldle and Critterdle",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.tsx",
+    "./styles.css": "./src/styles.css"
+  },
+  "files": ["src"],
+  "peerDependencies": {
+    "react": ">=19",
+    "react-dom": ">=19"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.14",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  },
+  "scripts": {
+    "check": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts"
+  },
+  "license": "MIT"
+}
