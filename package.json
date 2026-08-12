@@ -1,6 +1,6 @@
 {
   "name": "@sirrio/dndle-core",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Shared daily guessing game UI and logic for Spelldle and Critterdle",
   "type": "module",
   "exports": {

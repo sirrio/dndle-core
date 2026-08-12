@@ -45,6 +45,12 @@ export type DndleConfig<T extends DndleEntry> = {
   nextLabel: string;
   shareQuestion: string;
   shareUrl: string;
+  shareAction: string;
+  relatedGame: {
+    prompt: string;
+    label: string;
+    url: string;
+  };
   resultSummary: (entry: T) => string;
   renderIcon: (entry?: T) => ReactNode;
   credits: ReactNode;
@@ -93,6 +99,21 @@ export function compareNumber(value: number, target: number): Result {
 
 export function compareRank(value: number, target: number): Result {
   return compareNumber(value, target);
+}
+
+export function buildShareText({ brand, gameNumber, score, rows, question, action, url, relatedPrompt, relatedLabel, relatedUrl }: {
+  brand: string;
+  gameNumber: number;
+  score: string;
+  rows: string[];
+  question: string;
+  action: string;
+  url: string;
+  relatedPrompt: string;
+  relatedLabel: string;
+  relatedUrl: string;
+}) {
+  return `[${brand}](${url}) #${gameNumber} ${score}\n${rows.join("\n")}\n\n${question}\n[${action}](${url})\n\n${relatedPrompt}\n[${relatedLabel}](${relatedUrl})`;
 }
 
 function Cell({ label, value, result }: { label: string; value: string; result: Result }) {
@@ -190,7 +211,18 @@ export function DailyDndle<T extends DndleEntry>({ config }: { config: DndleConf
 
   async function share() {
     const rows = guesses.map((guess) => comparison(guess, target, config.traits).map((value) => value === "exact" ? "🟩" : value === "partial" ? "🟨" : value === "higher" ? "⬆️" : value === "lower" ? "⬇️" : "⬛").join(""));
-    const text = `${config.brand} #${gameNumber} ${won ? guesses.length : "X"}/${MAX_GUESSES}\n${rows.join("\n")}\n\n${config.shareQuestion}\n[Find out here!](${config.shareUrl})`;
+    const text = buildShareText({
+      brand: config.brand,
+      gameNumber,
+      score: `${won ? guesses.length : "X"}/${MAX_GUESSES}`,
+      rows,
+      question: config.shareQuestion,
+      action: config.shareAction,
+      url: config.shareUrl,
+      relatedPrompt: config.relatedGame.prompt,
+      relatedLabel: config.relatedGame.label,
+      relatedUrl: config.relatedGame.url,
+    });
     await navigator.clipboard.writeText(text);
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1800);
