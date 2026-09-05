@@ -34,14 +34,22 @@ only the product, contracts, verification, and distribution details specific to
 
 - Install the locked dependency set with `npm ci` when a clean installation is
   required.
-- Run `npm run check` for the strict TypeScript check.
-- Run `npm test` for the Node test suite.
-- GitHub CI runs all three commands on Node 22 for pull requests and pushes to
-  `main`.
-- For changes to shared behavior, public types, or CSS, verify both consuming
-  repositories with `npm test` and `npm run build`, using the local candidate
-  package without committing temporary dependency or lockfile changes.
-- Verify shared UI changes in both Spelldle and Critterdle on desktop and mobile.
+- During Coding, select checks for the changed shared behavior and contracts.
+  Public type changes require `npm run check`; exercise affected behavior and UI
+  in both consuming games where the shared change applies, using only the
+  directly affected flows and viewports.
+- In the PR phase, run `npm run check` for strict TypeScript checking and
+  `npm test` for the full Node test suite.
+- For changes to shared behavior, public types, or CSS, the PR checks also run
+  `npm test` and `npm run build` in both consuming repositories. Use the local
+  candidate package without committing temporary dependency or lockfile changes.
+  Shared UI changes require the full desktop and mobile checks in both games.
+- Use the consuming game's documented local browser-test service and readiness
+  endpoint. This package has no standalone web server; tests need the candidate
+  integrated into Spelldle and Critterdle.
+- GitHub CI currently runs installation, type checking, and the Node suite on
+  Node 22 for all pull requests, including Drafts, and pushes to `main`; CI does
+  not yet distinguish Coding and PR phases.
 
 ## Distribution and coordinated releases
 
