@@ -104,6 +104,10 @@ export function entryOptionDisabled(used: boolean, finished: boolean) {
   return used && !finished;
 }
 
+export function buildShareRow(results: Result[]) {
+  return results.map((value) => value === "exact" ? "🟩" : value === "partial" ? "🟨" : value === "higher" ? "⬆️" : value === "lower" ? "⬇️" : "⬜").join("");
+}
+
 export function buildShareText({ brand, gameNumber, score, rows, question, action, url, relatedPrompt, relatedUrl }: {
   brand: string;
   gameNumber: number;
@@ -212,7 +216,7 @@ export function DailyDndle<T extends DndleEntry>({ config }: { config: DndleConf
   }
 
   async function share() {
-    const rows = guesses.map((guess) => comparison(guess, target, config.traits).map((value) => value === "exact" ? "🟩" : value === "partial" ? "🟨" : value === "higher" ? "⬆️" : value === "lower" ? "⬇️" : "⬛").join(""));
+    const rows = guesses.map((guess) => buildShareRow(comparison(guess, target, config.traits)));
     const text = buildShareText({
       brand: config.brand,
       gameNumber,
