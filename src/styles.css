@@ -140,6 +140,11 @@ dialog.modal-backdrop::backdrop, dialog.result-backdrop::backdrop { background: 
 .credits a { color: var(--red-dark); font-weight: 700; }
 
 .result-popup { text-align: center; }
+.share-fallback { margin-top: 16px; text-align: left; }
+.share-fallback p { color: var(--ink); font-size: 14px; line-height: 1.4; }
+.share-fallback label { display: block; margin: 8px 0; font-size: 14px; font-weight: 700; }
+.share-fallback textarea { display: block; width: 100%; min-height: 180px; padding: 10px; resize: vertical; border: 1px solid var(--line); border-radius: 2px; background: var(--paper); color: var(--ink); font: 14px/1.5 var(--font-ui); }
+.share-fallback textarea:focus-visible { outline: 2px solid var(--red); outline-offset: 2px; }
 .reveal-sigil { width: 82px; height: 82px; margin: 0 auto 17px; display: grid; place-items: center; border: 1px solid var(--accent-border); border-radius: 50%; background: var(--accent-soft); color: var(--red); font: 400 42px var(--font-display); }
 .result-kicker { color: var(--red); font-size: 11px; font-weight: 700; letter-spacing: .14em; }
 .result-popup h2 { margin: 6px 0 5px; font: 400 42px var(--font-display); letter-spacing: -.02em; }

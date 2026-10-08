@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { GameDialog } from "./GameDialog";
+import { tryCopyText } from "./clipboard";
 import { DEFAULT_MAX_GUESSES, nextGameStats, normalizeStats, resolveGuessLimit, roundOutcome } from "./game-state";
 
 export type Result = "exact" | "partial" | "wrong" | "higher" | "lower";
@@ -139,6 +140,8 @@ export function DailyDndle<T extends DndleEntry>({ config }: { config: DndleConf
   const [expandedGuess, setExpandedGuess] = useState<string | null | undefined>(undefined);
   const [showHow, setShowHow] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [shareFallback, setShareFallback] = useState("");
+  const shareTextField = useRef<HTMLTextAreaElement>(null);
   const [resultDismissed, setResultDismissed] = useState(false);
   const [showStats, setShowStats] = useState(false);
   const [showNames, setShowNames] = useState(true);
@@ -150,6 +153,10 @@ export function DailyDndle<T extends DndleEntry>({ config }: { config: DndleConf
   const selectedEntry = config.entries.find((entry) => entry.name === selectedName);
   const visibleGuesses = compactResults ? [...guesses].reverse() : guesses;
   const expandedGuessName = expandedGuess === undefined ? guesses.at(-1)?.name : expandedGuess;
+
+  useEffect(() => {
+    if (shareFallback) shareTextField.current?.focus();
+  }, [shareFallback]);
 
   useEffect(() => {
     const media = window.matchMedia("(max-width: 720px)");
@@ -245,9 +252,15 @@ export function DailyDndle<T extends DndleEntry>({ config }: { config: DndleConf
       relatedPrompt: config.relatedGame.prompt,
       relatedUrl: config.relatedGame.url,
     });
-    await navigator.clipboard.writeText(text);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1800);
+    setCopied(false);
+    if (await tryCopyText(text, navigator.clipboard)) {
+      setShareFallback("");
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    } else {
+      setShareFallback(text);
+      shareTextField.current?.focus();
+    }
   }
 
   function showTooltip(element: HTMLElement, name: string) {
@@ -333,7 +346,11 @@ export function DailyDndle<T extends DndleEntry>({ config }: { config: DndleConf
 
       {showHow && <GameDialog className="modal-backdrop" labelledBy="how-title" onClose={() => setShowHow(false)} closeOnBackdrop><div className="modal"><button className="modal-close" onClick={() => setShowHow(false)} aria-label="Close">×</button><div className="panel-kicker">HOW TO PLAY</div><h2 id="how-title">{config.howTitle}</h2><p className="how-intro">{config.howIntro}</p><div className="how-steps">{config.howSteps.map((step, index) => <div className="how-step" key={step}><strong>{index + 1}</strong><span>{step}</span></div>)}</div><div className="legend modal-legend"><span><i className="swatch exact" />Exact</span><span><i className="swatch partial" />Partial</span><span><i className="swatch wrong" />No match</span></div><p className="arrow-help">Arrows for {config.arrowTraits} point toward the target.</p><div className="credits"><strong>CONTENT &amp; ICON CREDITS</strong>{config.credits}</div></div></GameDialog>}
 
-      {finished && !resultDismissed && <GameDialog className="result-backdrop" labelledBy="result-title" onClose={() => setResultDismissed(true)} returnFocus={() => resultButton.current}><section className="result-popup"><button className="popup-close" onClick={() => setResultDismissed(true)} aria-label="Close result">×</button><span className="reveal-sigil">{config.renderIcon(target)}</span><div className="result-kicker">{won ? config.successKicker(guesses.length) : config.failureKicker}</div><h2 id="result-title">{target.name}</h2><p>{config.resultSummary(target)}</p><div className="share-grid" style={{ gridTemplateColumns: `repeat(${config.traits.length}, 24px)` }} aria-label="Your result">{guesses.flatMap((guess) => comparison(guess, target, config.traits).map((value, index) => <i key={`${guess.name}-${index}`} className={`share-dot ${value}`} />))}</div><div className="next-game"><span>{config.nextLabel}</span><strong>{countdown}</strong></div><div className="result-actions"><button className="primary" onClick={share}>{copied ? "COPIED ✓" : "SHARE RESULT"}</button><button className="stats-button" onClick={() => setShowStats((value) => !value)}>{showStats ? "HIDE" : "STATISTICS"}</button></div>{showStats && <div className="stats-drawer"><div className="stat"><strong>{stats.played}</strong><span>PLAYED</span></div><div className="stat"><strong>{stats.played ? Math.round((stats.wins / stats.played) * 100) : 0}%</strong><span>WON</span></div><div className="stat"><strong>{stats.wins ? (stats.totalGuesses / stats.wins).toFixed(1) : "–"}</strong><span>AVG. GUESSES</span></div><div className="stat"><strong>{stats.streak}</strong><span>STREAK</span></div><div className="distribution">{stats.distribution.map((value, index) => <div key={index}><span>{index + 1}</span><i style={{ width: `${Math.max(8, stats.wins ? (value / Math.max(...stats.distribution, 1)) * 100 : 8)}%` }}>{value}</i></div>)}</div></div>}</section></GameDialog>}
+      {finished && !resultDismissed && <GameDialog className="result-backdrop" labelledBy="result-title" onClose={() => setResultDismissed(true)} returnFocus={() => resultButton.current}><section className="result-popup"><button className="popup-close" onClick={() => setResultDismissed(true)} aria-label="Close result">×</button><span className="reveal-sigil">{config.renderIcon(target)}</span><div className="result-kicker">{won ? config.successKicker(guesses.length) : config.failureKicker}</div><h2 id="result-title">{target.name}</h2><p>{config.resultSummary(target)}</p><div className="share-grid" style={{ gridTemplateColumns: `repeat(${config.traits.length}, 24px)` }} aria-label="Your result">{guesses.flatMap((guess) => comparison(guess, target, config.traits).map((value, index) => <i key={`${guess.name}-${index}`} className={`share-dot ${value}`} />))}</div><div className="next-game"><span>{config.nextLabel}</span><strong>{countdown}</strong></div><div className="result-actions"><button className="primary" onClick={share}>{copied ? "COPIED ✓" : "SHARE RESULT"}</button><button className="stats-button" onClick={() => setShowStats((value) => !value)}>{showStats ? "HIDE" : "STATISTICS"}</button></div>{shareFallback && <div className="share-fallback">
+  <p id={`${config.id}-copy-help`} role="alert">Automatic copying wasn't available. Copy your result below.</p>
+  <label htmlFor={`${config.id}-share-text`}>Your result</label>
+  <textarea id={`${config.id}-share-text`} ref={shareTextField} readOnly value={shareFallback} aria-describedby={`${config.id}-copy-help`} onFocus={(event) => event.currentTarget.select()} />
+</div>}{showStats && <div className="stats-drawer"><div className="stat"><strong>{stats.played}</strong><span>PLAYED</span></div><div className="stat"><strong>{stats.played ? Math.round((stats.wins / stats.played) * 100) : 0}%</strong><span>WON</span></div><div className="stat"><strong>{stats.wins ? (stats.totalGuesses / stats.wins).toFixed(1) : "–"}</strong><span>AVG. GUESSES</span></div><div className="stat"><strong>{stats.streak}</strong><span>STREAK</span></div><div className="distribution">{stats.distribution.map((value, index) => <div key={index}><span>{index + 1}</span><i style={{ width: `${Math.max(8, stats.wins ? (value / Math.max(...stats.distribution, 1)) * 100 : 8)}%` }}>{value}</i></div>)}</div></div>}</section></GameDialog>}
       <footer className="site-footer">A project by <a href="https://sirrio.de/" target="_blank" rel="noreferrer">sirrio.de</a><span aria-hidden="true">·</span><a href="https://sirrio.de/impressum/" target="_blank" rel="noreferrer">Impressum</a><span aria-hidden="true">·</span><a href="https://sirrio.de/datenschutz/" target="_blank" rel="noreferrer">Datenschutz</a></footer>
     </main>
   );
