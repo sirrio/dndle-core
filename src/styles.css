@@ -199,7 +199,7 @@ dialog.modal-backdrop::backdrop, dialog.result-backdrop::backdrop { background: 
   .result-row.is-collapsed .guess-traits { display: none; }
   .spell-cell { grid-column: 1 / -1; min-height: 44px; }
   .result-cell { min-height: 58px; flex-direction: column; gap: 4px; font-size: 13px; }
-  .mobile-label { display: block; font-size: 9px; opacity: .74; letter-spacing: .07em; }
+  .mobile-label { display: block; font-size: 12px; opacity: 1; letter-spacing: .025em; }
   .result-popup, .modal { padding: 34px 22px 24px; }
   .modal-legend { grid-template-columns: 1fr; }
 }
