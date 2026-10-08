@@ -132,6 +132,9 @@ export function DailyDndle<T extends DndleEntry>({ config }: { config: DndleConf
   const [roundReady, setRoundReady] = useState(false);
   const [newGuessName, setNewGuessName] = useState<string | null>(null);
   const newGuessRow = useRef<HTMLDivElement>(null);
+  const archivePanel = useRef<HTMLElement>(null);
+  const [compactResults, setCompactResults] = useState(() => typeof window !== "undefined" && window.matchMedia("(max-width: 720px)").matches);
+  const [expandedGuess, setExpandedGuess] = useState<string | null | undefined>(undefined);
   const [showHow, setShowHow] = useState(false);
   const [copied, setCopied] = useState(false);
   const [resultDismissed, setResultDismissed] = useState(false);
@@ -143,6 +146,15 @@ export function DailyDndle<T extends DndleEntry>({ config }: { config: DndleConf
   const { won, finished } = roundOutcome(guesses.map((guess) => guess.name), target.name, guessLimit);
   const remainingGuesses = Math.max(0, guessLimit - guesses.length);
   const selectedEntry = config.entries.find((entry) => entry.name === selectedName);
+  const visibleGuesses = compactResults ? [...guesses].reverse() : guesses;
+  const expandedGuessName = expandedGuess === undefined ? guesses.at(-1)?.name : expandedGuess;
+
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 720px)");
+    const update = () => setCompactResults(media.matches);
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
 
   useEffect(() => {
     const dayKey = utcDayKey();
@@ -165,6 +177,7 @@ export function DailyDndle<T extends DndleEntry>({ config }: { config: DndleConf
 
   useEffect(() => {
     if (!newGuessName) return;
+    if (compactResults && !finished) newGuessRow.current?.querySelector<HTMLButtonElement>(".guess-summary")?.focus({ preventScroll: true });
     newGuessRow.current?.scrollIntoView({ block: "nearest", behavior: "instant" });
     const timer = window.setTimeout(() => setNewGuessName(null), 400);
     return () => window.clearTimeout(timer);
@@ -211,6 +224,8 @@ export function DailyDndle<T extends DndleEntry>({ config }: { config: DndleConf
     if (!guess || guesses.some((entry) => entry.name === guess.name)) return;
     setGuesses((current) => [...current, guess]);
     setNewGuessName(guess.name);
+    setExpandedGuess(guess.name);
+    setTooltip(null);
     setSelectedName("");
     if (guess.name === target.name || guesses.length + 1 >= guessLimit) setResultDismissed(false);
   }
@@ -255,7 +270,7 @@ export function DailyDndle<T extends DndleEntry>({ config }: { config: DndleConf
       {tooltip && <div id="entry-tooltip" className="spell-tooltip" role="tooltip" style={{ left: tooltip.left, top: tooltip.top }}>{tooltip.name}</div>}
 
       <section className="play-shell">
-        <article className="archive-panel">
+        <article className="archive-panel" ref={archivePanel} tabIndex={-1} aria-label={config.collectionTitle || config.itemLabel}>
           <div className="section-head"><h2>{config.collectionTitle || config.itemLabel}</h2><button className="name-toggle" type="button" aria-pressed={showNames} onClick={() => { setShowNames((current) => !current); setTooltip(null); }}>Show names</button></div>
           <div className={`spell-grid${showNames ? "" : " names-hidden"}`}>
             {sortedEntries.map((entry) => {
@@ -276,13 +291,30 @@ export function DailyDndle<T extends DndleEntry>({ config }: { config: DndleConf
 
           <article className="results-panel" aria-label="Your guesses">
             <div className="section-head results-head"><h2>{config.resultsTitle}</h2><span className="round-label" aria-label={`Daily puzzle ${gameNumber}`}>#{gameNumber}</span></div>
+            {guesses.length > 0 && !finished && <button className="primary next-guess-button" type="button" onClick={() => {
+              setTooltip(null);
+              archivePanel.current?.focus({ preventScroll: true });
+              archivePanel.current?.scrollIntoView({ block: "start", behavior: "instant" });
+            }}>Choose next {config.itemLabel.toLowerCase()} ↑</button>}
             {guesses.length === 0 ? <p className="results-empty">Make your first guess to reveal the clues.</p> : <div className="table-scroll">
               <div className="table-head" style={gridStyle}><span>{config.itemLabel}</span>{config.traits.map((trait) => <span key={trait.key}>{trait.label}</span>)}</div>
               <div className="rows">
-                {guesses.map((guess) => {
+                {visibleGuesses.map((guess) => {
                   const results = comparison(guess, target, config.traits);
                   const solved = guess.name === target.name;
-                  return <div className={`result-row${solved ? " solved" : ""}${guess.name === newGuessName ? " is-new" : ""}`} key={guess.name} ref={guess.name === newGuessName ? newGuessRow : undefined} style={gridStyle}><div className={`spell-cell${solved ? " exact" : ""}`} role="img" tabIndex={0} aria-label={guess.name} aria-describedby={tooltip?.name === guess.name ? "entry-tooltip" : undefined} onMouseEnter={(event) => showTooltip(event.currentTarget, guess.name)} onMouseLeave={() => setTooltip(null)} onFocus={(event) => showTooltip(event.currentTarget, guess.name)} onBlur={() => setTooltip(null)}><span className="row-sigil">{config.renderIcon(guess)}</span><span className="sr-only">{guess.name}</span></div>{config.traits.map((trait, traitIndex) => <Cell key={trait.key} label={trait.mobileLabel || trait.label} value={trait.value(guess)} result={results[traitIndex]} />)}</div>;
+                  const number = guesses.indexOf(guess) + 1;
+                  const expanded = guess.name === expandedGuessName;
+                  const traitsId = `${config.id}-guess-${number}`;
+                  return <div className={`result-row${solved ? " solved" : ""}${expanded ? "" : " is-collapsed"}${guess.name === newGuessName ? " is-new" : ""}`} key={guess.name} ref={guess.name === newGuessName ? newGuessRow : undefined} style={gridStyle}>
+                    <button className="guess-summary" type="button" aria-expanded={expanded} aria-controls={traitsId} onClick={() => { setExpandedGuess(expanded ? null : guess.name); setTooltip(null); }}>
+                      <span className="row-sigil" aria-hidden="true">{config.renderIcon(guess)}</span>
+                      <span className="guess-summary-name">{guess.name}</span>
+                      <span className="guess-number">#{number}</span>
+                      <span aria-hidden="true">{expanded ? "−" : "+"}</span>
+                    </button>
+                    <div className={`spell-cell${solved ? " exact" : ""}`} role="img" tabIndex={0} aria-label={guess.name} aria-describedby={tooltip?.name === guess.name ? "entry-tooltip" : undefined} onMouseEnter={(event) => showTooltip(event.currentTarget, guess.name)} onMouseLeave={() => setTooltip(null)} onFocus={(event) => showTooltip(event.currentTarget, guess.name)} onBlur={() => setTooltip(null)}><span className="row-sigil">{config.renderIcon(guess)}</span><span className="sr-only">{guess.name}</span></div>
+                    <div className="guess-traits" id={traitsId}>{config.traits.map((trait, traitIndex) => <Cell key={trait.key} label={trait.mobileLabel || trait.label} value={trait.value(guess)} result={results[traitIndex]} />)}</div>
+                  </div>;
                 })}
               </div>
             </div>}

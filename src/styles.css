@@ -92,6 +92,8 @@ main { height: 100vh; overflow: hidden; }
 .table-head, .result-row { min-width: 0; display: grid; grid-template-columns: .42fr .68fr .92fr .82fr .55fr .82fr .68fr 1fr; gap: 4px; }
 .table-head { flex: 0 0 29px; padding: 0 3px; color: #626269; font-size: clamp(10px, .7vw, 12px); font-weight: 700; letter-spacing: .025em; text-align: center; text-transform: uppercase; }
 .rows { min-height: 0; display: grid; grid-auto-rows: minmax(54px, auto); gap: 6px; }
+.guess-summary, .next-guess-button { display: none; }
+.guess-traits { display: contents; }
 .result-row.is-new { animation: row-in .28s both; }
 .round-label { color: var(--ink-soft); font-size: 13px; }
 .results-empty { margin: 0; padding: 18px; color: var(--ink-soft); font-size: 15px; line-height: 1.4; }
@@ -185,6 +187,13 @@ main { height: 100vh; overflow: hidden; }
   .table-scroll { overflow: visible; }
   .rows { display: block; }
   .result-row { min-width: 0; margin-bottom: 8px; padding: 7px; grid-template-columns: repeat(2, 1fr); background: #f2f2f3; border: 1px solid var(--line); }
+  .next-guess-button { display: block; width: 100%; margin: 10px 0 2px; }
+  .guess-summary { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 44px; padding: 4px; border: 0; background: transparent; color: var(--ink); text-align: left; font-size: 14px; cursor: pointer; }
+  .guess-summary .row-sigil { width: 28px; height: 28px; flex: 0 0 28px; }
+  .guess-summary-name { flex: 1; overflow-wrap: anywhere; font-weight: 700; }
+  .guess-number { color: var(--ink-soft); font-size: 12px; }
+  .result-row > .spell-cell { display: none; }
+  .result-row.is-collapsed .guess-traits { display: none; }
   .spell-cell { grid-column: 1 / -1; min-height: 44px; }
   .result-cell { min-height: 58px; flex-direction: column; gap: 4px; font-size: 13px; }
   .mobile-label { display: block; font-size: 9px; opacity: .74; letter-spacing: .07em; }
