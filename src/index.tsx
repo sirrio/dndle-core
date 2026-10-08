@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { DEFAULT_MAX_GUESSES, nextGameStats, normalizeStats, resolveGuessLimit, roundOutcome } from "./game-state";
 
 export type Result = "exact" | "partial" | "wrong" | "higher" | "lower";
 
@@ -31,6 +32,7 @@ export type DndleConfig<T extends DndleEntry> = {
   traits: Trait<T>[];
   daily: DailySettings;
   itemLabel: string;
+  collectionTitle?: string;
   archiveName: string;
   resultsTitle: string;
   selectPrompt: string;
@@ -54,18 +56,6 @@ export type DndleConfig<T extends DndleEntry> = {
   renderIcon: (entry?: T) => ReactNode;
   credits: ReactNode;
 };
-
-type GameStats = {
-  played: number;
-  wins: number;
-  totalGuesses: number;
-  streak: number;
-  lastWin: string;
-  distribution: number[];
-};
-
-const MAX_GUESSES = 6;
-const EMPTY_STATS: GameStats = { played: 0, wins: 0, totalGuesses: 0, streak: 0, lastWin: "", distribution: [0, 0, 0, 0, 0, 0] };
 
 export function utcDayKey(date = new Date()) {
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
@@ -138,35 +128,51 @@ export function DailyDndle<T extends DndleEntry>({ config }: { config: DndleConf
   const sortedEntries = useMemo(() => [...config.entries].sort((a, b) => a.name.localeCompare(b.name)), [config]);
   const [selectedName, setSelectedName] = useState("");
   const [guesses, setGuesses] = useState<T[]>([]);
+  const [guessLimit, setGuessLimit] = useState(DEFAULT_MAX_GUESSES);
+  const [roundReady, setRoundReady] = useState(false);
+  const [newGuessName, setNewGuessName] = useState<string | null>(null);
+  const newGuessRow = useRef<HTMLDivElement>(null);
   const [showHow, setShowHow] = useState(false);
   const [copied, setCopied] = useState(false);
   const [resultDismissed, setResultDismissed] = useState(false);
   const [showStats, setShowStats] = useState(false);
   const [showNames, setShowNames] = useState(true);
-  const [stats, setStats] = useState<GameStats>(EMPTY_STATS);
+  const [stats, setStats] = useState(() => normalizeStats());
   const [countdown, setCountdown] = useState("");
   const [tooltip, setTooltip] = useState<{ name: string; left: number; top: number } | null>(null);
-  const won = guesses.some((guess) => guess.name === target.name);
-  const finished = won || guesses.length >= MAX_GUESSES;
+  const { won, finished } = roundOutcome(guesses.map((guess) => guess.name), target.name, guessLimit);
   const selectedEntry = config.entries.find((entry) => entry.name === selectedName);
 
   useEffect(() => {
-    const saved = localStorage.getItem(`${config.storageKey}:${utcDayKey()}`);
-    if (!saved) return;
+    const dayKey = utcDayKey();
+    const saved = localStorage.getItem(`${config.storageKey}:${dayKey}`);
+    const recorded = Boolean(localStorage.getItem(`${config.storageKey}:recorded:${dayKey}`));
+    setGuessLimit(resolveGuessLimit(Number(localStorage.getItem(`${config.storageKey}:limit:${dayKey}`)), recorded));
     try {
-      const names = JSON.parse(saved) as string[];
-      setGuesses(names.map((name) => config.entries.find((entry) => entry.name === name)).filter(Boolean) as T[]);
+      const names: unknown = JSON.parse(saved || "[]");
+      if (Array.isArray(names)) setGuesses(names.map((name) => config.entries.find((entry) => entry.name === name)).filter(Boolean) as T[]);
     } catch { /* Ignore invalid local data. */ }
+    setRoundReady(true);
   }, [config]);
 
   useEffect(() => {
-    if (guesses.length) localStorage.setItem(`${config.storageKey}:${utcDayKey()}`, JSON.stringify(guesses.map((guess) => guess.name)));
-  }, [config.storageKey, guesses]);
+    if (!roundReady || !guesses.length) return;
+    const dayKey = utcDayKey();
+    localStorage.setItem(`${config.storageKey}:limit:${dayKey}`, String(guessLimit));
+    localStorage.setItem(`${config.storageKey}:${dayKey}`, JSON.stringify(guesses.map((guess) => guess.name)));
+  }, [config.storageKey, guesses, guessLimit, roundReady]);
+
+  useEffect(() => {
+    if (!newGuessName) return;
+    newGuessRow.current?.scrollIntoView({ block: "nearest", behavior: "instant" });
+    const timer = window.setTimeout(() => setNewGuessName(null), 400);
+    return () => window.clearTimeout(timer);
+  }, [newGuessName]);
 
   useEffect(() => {
     try {
       const saved = localStorage.getItem(`${config.storageKey}:stats`);
-      if (saved) setStats({ ...EMPTY_STATS, ...JSON.parse(saved) });
+      if (saved) setStats(normalizeStats(JSON.parse(saved)));
     } catch { /* Ignore invalid local data. */ }
     const initialDay = utcDayKey();
     const update = () => {
@@ -185,34 +191,27 @@ export function DailyDndle<T extends DndleEntry>({ config }: { config: DndleConf
   }, [config.storageKey]);
 
   useEffect(() => {
-    if (!finished) return;
+    if (!roundReady || !finished) return;
     const recordKey = `${config.storageKey}:recorded:${utcDayKey()}`;
     if (localStorage.getItem(recordKey)) return;
-    let current = EMPTY_STATS;
-    try { current = { ...EMPTY_STATS, ...JSON.parse(localStorage.getItem(`${config.storageKey}:stats`) || "{}") }; } catch { /* Use defaults. */ }
+    let current = normalizeStats();
+    try { current = normalizeStats(JSON.parse(localStorage.getItem(`${config.storageKey}:stats`) || "{}")); } catch { /* Use defaults. */ }
     const yesterday = new Date(Date.now() - 86400000);
     const yesterdayKey = utcDayKey(yesterday);
-    const next: GameStats = {
-      ...current,
-      played: current.played + 1,
-      wins: current.wins + (won ? 1 : 0),
-      totalGuesses: current.totalGuesses + (won ? guesses.length : 0),
-      streak: won ? (current.lastWin === yesterdayKey ? current.streak + 1 : 1) : 0,
-      lastWin: won ? utcDayKey() : current.lastWin,
-      distribution: current.distribution.map((value, index) => value + (won && index === guesses.length - 1 ? 1 : 0)),
-    };
+    const next = nextGameStats(current, { won, guessCount: guesses.length, dayKey: utcDayKey(), yesterdayKey });
     localStorage.setItem(`${config.storageKey}:stats`, JSON.stringify(next));
     localStorage.setItem(recordKey, "1");
     setStats(next);
-  }, [config.storageKey, finished, guesses.length, won]);
+  }, [config.storageKey, finished, guesses.length, won, roundReady]);
 
   function submit() {
-    if (finished) return;
+    if (!roundReady || finished) return;
     const guess = config.entries.find((entry) => entry.name.toLowerCase() === selectedName.trim().toLowerCase());
     if (!guess || guesses.some((entry) => entry.name === guess.name)) return;
     setGuesses((current) => [...current, guess]);
+    setNewGuessName(guess.name);
     setSelectedName("");
-    if (guess.name === target.name || guesses.length + 1 >= MAX_GUESSES) setResultDismissed(false);
+    if (guess.name === target.name || guesses.length + 1 >= guessLimit) setResultDismissed(false);
   }
 
   async function share() {
@@ -220,7 +219,7 @@ export function DailyDndle<T extends DndleEntry>({ config }: { config: DndleConf
     const text = buildShareText({
       brand: config.brand,
       gameNumber,
-      score: `${won ? guesses.length : "X"}/${MAX_GUESSES}`,
+      score: `${won ? guesses.length : "X"}/${guessLimit}`,
       rows,
       question: config.shareQuestion,
       action: config.shareAction,
@@ -247,7 +246,7 @@ export function DailyDndle<T extends DndleEntry>({ config }: { config: DndleConf
         <a className="brand" href="#top" aria-label={`${config.brand} home`}><span className="brand-rune">{config.brandIconUrl ? <img src={config.brandIconUrl} alt="" /> : config.brandRune}</span></a>
         <div className="game-tagline">{config.tagline}</div>
         <div className="header-actions">
-          <div className="attempts"><strong>{guesses.length}</strong><span>/ {MAX_GUESSES}</span></div>
+          <div className="attempts" aria-label={`${guesses.length} of ${guessLimit} guesses used`}><strong>{guesses.length}</strong><span>/ {guessLimit}</span></div>
           {finished && <button className="icon-button results-button" onClick={() => setResultDismissed(false)} aria-label="Open result and statistics">RESULT</button>}
           <button className="icon-button" onClick={() => setShowHow(true)} aria-label="Show game rules">?</button>
         </div>
@@ -257,7 +256,7 @@ export function DailyDndle<T extends DndleEntry>({ config }: { config: DndleConf
 
       <section className="play-shell">
         <article className="archive-panel">
-          <div className="section-head"><div><span className="tiny-label">CHOOSE A</span><h2>{config.itemLabel}</h2></div><button className="name-toggle" type="button" aria-pressed={showNames} onClick={() => { setShowNames((current) => !current); setTooltip(null); }}><span>Names</span><strong>{showNames ? "On" : "Off"}</strong></button></div>
+          <div className="section-head"><h2>{config.collectionTitle || config.itemLabel}</h2><button className="name-toggle" type="button" aria-pressed={showNames} onClick={() => { setShowNames((current) => !current); setTooltip(null); }}>Show names</button></div>
           <div className={`spell-grid${showNames ? "" : " names-hidden"}`}>
             {sortedEntries.map((entry) => {
               const used = guesses.some((guess) => guess.name === entry.name);
@@ -271,23 +270,22 @@ export function DailyDndle<T extends DndleEntry>({ config }: { config: DndleConf
         <div className="game-console">
           <section className={`selection-stage${selectedEntry ? " has-selection" : ""}`}>
             <div className="selected-sigil" aria-hidden="true">{config.renderIcon(selectedEntry)}</div>
-            <div className="selected-copy"><span className="tiny-label">YOUR GUESS</span><h1>{selectedEntry?.name || `Choose a ${config.itemLabel.toLowerCase()}`}</h1><p>{selectedEntry ? config.readyPrompt : config.selectPrompt}</p></div>
-            <button className="primary submit-guess" onClick={submit} disabled={!selectedName || finished}>{config.actionLabel}</button>
+            <div className="selected-copy"><h1>{selectedEntry?.name || `Choose a ${config.itemLabel.toLowerCase()}`}</h1><p>{selectedEntry ? config.readyPrompt : config.selectPrompt}</p></div>
+            <button className="primary submit-guess" onClick={submit} disabled={!roundReady || !selectedName || finished}>{config.actionLabel}</button>
           </section>
 
           <article className="results-panel" aria-label="Your guesses">
-            <div className="section-head results-head"><div><span className="tiny-label">{config.archiveName} #{gameNumber}</span><h2>{config.resultsTitle}</h2></div></div>
-            <div className="table-scroll">
+            <div className="section-head results-head"><h2>{config.resultsTitle}</h2><span className="round-label" aria-label={`Daily puzzle ${gameNumber}`}>#{gameNumber}</span></div>
+            {guesses.length === 0 ? <p className="results-empty">Make your first guess to reveal the clues.</p> : <div className="table-scroll">
               <div className="table-head" style={gridStyle}><span>{config.itemLabel}</span>{config.traits.map((trait) => <span key={trait.key}>{trait.label}</span>)}</div>
               <div className="rows">
-                {guesses.map((guess, index) => {
+                {guesses.map((guess) => {
                   const results = comparison(guess, target, config.traits);
                   const solved = guess.name === target.name;
-                  return <div className={`result-row${solved ? " solved" : ""}`} key={guess.name} style={{ ...gridStyle, animationDelay: `${index * 40}ms` }}><div className={`spell-cell${solved ? " exact" : ""}`} role="img" tabIndex={0} aria-label={guess.name} aria-describedby={tooltip?.name === guess.name ? "entry-tooltip" : undefined} onMouseEnter={(event) => showTooltip(event.currentTarget, guess.name)} onMouseLeave={() => setTooltip(null)} onFocus={(event) => showTooltip(event.currentTarget, guess.name)} onBlur={() => setTooltip(null)}><span className="row-sigil">{config.renderIcon(guess)}</span><span className="sr-only">{guess.name}</span></div>{config.traits.map((trait, traitIndex) => <Cell key={trait.key} label={trait.mobileLabel || trait.label} value={trait.value(guess)} result={results[traitIndex]} />)}</div>;
+                  return <div className={`result-row${solved ? " solved" : ""}${guess.name === newGuessName ? " is-new" : ""}`} key={guess.name} ref={guess.name === newGuessName ? newGuessRow : undefined} style={gridStyle}><div className={`spell-cell${solved ? " exact" : ""}`} role="img" tabIndex={0} aria-label={guess.name} aria-describedby={tooltip?.name === guess.name ? "entry-tooltip" : undefined} onMouseEnter={(event) => showTooltip(event.currentTarget, guess.name)} onMouseLeave={() => setTooltip(null)} onFocus={(event) => showTooltip(event.currentTarget, guess.name)} onBlur={() => setTooltip(null)}><span className="row-sigil">{config.renderIcon(guess)}</span><span className="sr-only">{guess.name}</span></div>{config.traits.map((trait, traitIndex) => <Cell key={trait.key} label={trait.mobileLabel || trait.label} value={trait.value(guess)} result={results[traitIndex]} />)}</div>;
                 })}
-                {Array.from({ length: Math.max(0, MAX_GUESSES - guesses.length) }).map((_, index) => <div className="empty-row" style={gridStyle} key={index}><span>{guesses.length + index + 1}</span>{config.traits.map((trait) => <i key={trait.key} />)}</div>)}
               </div>
-            </div>
+            </div>}
           </article>
         </div>
       </section>

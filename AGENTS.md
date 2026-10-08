@@ -7,7 +7,7 @@ only the product, contracts, verification, and distribution details specific to
 ## Product boundary
 
 - `dndle-core` is the shared React game shell for Spelldle and Critterdle.
-- Keep daily UTC puzzle selection, the six-guess board, comparison feedback,
+- Keep daily UTC puzzle selection, the seven-guess board, comparison feedback,
   local statistics, result sharing, responsive layout, tooltips, and the legal
   footer generic and reusable by both games.
 - Game entries, icons, comparison traits, copy, theme values, storage
