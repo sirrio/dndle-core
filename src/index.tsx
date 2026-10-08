@@ -141,6 +141,7 @@ export function DailyDndle<T extends DndleEntry>({ config }: { config: DndleConf
   const [countdown, setCountdown] = useState("");
   const [tooltip, setTooltip] = useState<{ name: string; left: number; top: number } | null>(null);
   const { won, finished } = roundOutcome(guesses.map((guess) => guess.name), target.name, guessLimit);
+  const remainingGuesses = Math.max(0, guessLimit - guesses.length);
   const selectedEntry = config.entries.find((entry) => entry.name === selectedName);
 
   useEffect(() => {
@@ -246,7 +247,6 @@ export function DailyDndle<T extends DndleEntry>({ config }: { config: DndleConf
         <a className="brand" href="#top" aria-label={`${config.brand} home`}><span className="brand-rune">{config.brandIconUrl ? <img src={config.brandIconUrl} alt="" /> : config.brandRune}</span></a>
         <div className="game-tagline">{config.tagline}</div>
         <div className="header-actions">
-          <div className="attempts" aria-label={`${guesses.length} of ${guessLimit} guesses used`}><strong>{guesses.length}</strong><span>/ {guessLimit}</span></div>
           {finished && <button className="icon-button results-button" onClick={() => setResultDismissed(false)} aria-label="Open result and statistics">RESULT</button>}
           <button className="icon-button" onClick={() => setShowHow(true)} aria-label="Show game rules">?</button>
         </div>
@@ -269,7 +269,7 @@ export function DailyDndle<T extends DndleEntry>({ config }: { config: DndleConf
 
         <div className="game-console">
           <section className={`selection-stage${selectedEntry ? " has-selection" : ""}`}>
-            <div className="selected-sigil" aria-hidden="true">{config.renderIcon(selectedEntry)}</div>
+            <div className={`selected-sigil${selectedEntry ? "" : " is-empty"}`} aria-hidden="true">{selectedEntry ? config.renderIcon(selectedEntry) : <span className="placeholder-glyph">{config.renderIcon()}</span>}</div>
             <div className="selected-copy"><h1>{selectedEntry?.name || `Choose a ${config.itemLabel.toLowerCase()}`}</h1><p>{selectedEntry ? config.readyPrompt : config.selectPrompt}</p></div>
             <button className="primary submit-guess" onClick={submit} disabled={!roundReady || !selectedName || finished}>{config.actionLabel}</button>
           </section>
@@ -287,6 +287,7 @@ export function DailyDndle<T extends DndleEntry>({ config }: { config: DndleConf
               </div>
             </div>}
           </article>
+          <p className="guesses-remaining" role="status">{won ? `Solved in ${guesses.length} ${guesses.length === 1 ? "guess" : "guesses"}` : remainingGuesses ? `${remainingGuesses} ${remainingGuesses === 1 ? "guess" : "guesses"} remaining` : "No guesses remaining"}</p>
         </div>
       </section>
 
