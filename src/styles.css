@@ -116,6 +116,9 @@ main { height: 100vh; overflow: hidden; }
 .site-footer a:hover { text-decoration: underline; }
 
 .modal-backdrop, .result-backdrop { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; padding: 20px; background: rgba(20,20,24,.76); backdrop-filter: blur(5px); }
+dialog.modal-backdrop, dialog.result-backdrop { width: 100%; height: 100%; max-width: none; max-height: none; margin: 0; border: 0; color: inherit; }
+dialog.modal-backdrop:not([open]), dialog.result-backdrop:not([open]) { display: none; }
+dialog.modal-backdrop::backdrop, dialog.result-backdrop::backdrop { background: transparent; }
 .modal, .result-popup { width: min(560px, 100%); max-height: 92vh; overflow-y: auto; padding: 38px; position: relative; background: #fff; border: 1px solid var(--line); border-top: 5px solid var(--red); box-shadow: 0 22px 70px rgba(0,0,0,.32); }
 .modal-close, .popup-close { position: absolute; right: 15px; top: 15px; color: var(--ink); background: #fff; border-color: var(--line); }
 .modal h2 { margin: 8px 0 15px; font: 400 31px var(--font-display); }
