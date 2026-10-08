@@ -256,6 +256,12 @@ export function DailyDndle<T extends DndleEntry>({ config }: { config: DndleConf
     setTooltip({ name, left, top: rect.top - 8 });
   }
 
+  function showEntryTooltip(element: HTMLElement, name: string) {
+    const label = element.querySelector("strong");
+    if (!showNames || (label && (label.scrollHeight > label.clientHeight || label.scrollWidth > label.clientWidth))) showTooltip(element, name);
+    else setTooltip(null);
+  }
+
   const gridStyle = { "--trait-count": config.traits.length + 1 } as CSSProperties;
 
   return (
@@ -279,7 +285,7 @@ export function DailyDndle<T extends DndleEntry>({ config }: { config: DndleConf
               const used = guesses.some((guess) => guess.name === entry.name);
               const selected = selectedName === entry.name;
               const found = won && entry.name === target.name;
-              return <button className={`spell-option${selected ? " selected" : ""}${used ? " used" : ""}${found ? " found" : ""}${finished ? " locked" : ""}`} key={entry.name} onClick={() => { if (!used && !finished) setSelectedName(entry.name); }} onMouseEnter={showNames ? undefined : (event) => showTooltip(event.currentTarget, entry.name)} onMouseLeave={showNames ? undefined : () => setTooltip(null)} onFocus={showNames ? undefined : (event) => showTooltip(event.currentTarget, entry.name)} onBlur={showNames ? undefined : () => setTooltip(null)} disabled={entryOptionDisabled(used, finished)} aria-disabled={used || finished} aria-describedby={!showNames && tooltip?.name === entry.name ? "entry-tooltip" : undefined} aria-label={entry.name} aria-pressed={selected}><span className="option-sigil">{config.renderIcon(entry)}</span>{showNames && <strong>{entry.name}</strong>}</button>;
+              return <button className={`spell-option${selected ? " selected" : ""}${used ? " used" : ""}${found ? " found" : ""}${finished ? " locked" : ""}`} key={entry.name} onClick={() => { if (!used && !finished) setSelectedName(entry.name); }} onMouseEnter={(event) => showEntryTooltip(event.currentTarget, entry.name)} onMouseLeave={() => setTooltip(null)} onFocus={(event) => showEntryTooltip(event.currentTarget, entry.name)} onBlur={() => setTooltip(null)} disabled={entryOptionDisabled(used, finished)} aria-disabled={used || finished} aria-describedby={tooltip?.name === entry.name ? "entry-tooltip" : undefined} aria-label={entry.name} aria-pressed={selected}><span className="option-sigil">{config.renderIcon(entry)}</span>{showNames && <strong>{entry.name}</strong>}</button>;
             })}
           </div>
         </article>
