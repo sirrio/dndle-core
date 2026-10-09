@@ -1,4 +1,7 @@
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { GameDialog } from "./GameDialog";
+import { tryCopyText } from "./clipboard";
+import { DEFAULT_MAX_GUESSES, nextGameStats, normalizeStats, resolveGuessLimit, roundOutcome } from "./game-state";
 
 export type Result = "exact" | "partial" | "wrong" | "higher" | "lower";
 
@@ -31,6 +34,7 @@ export type DndleConfig<T extends DndleEntry> = {
   traits: Trait<T>[];
   daily: DailySettings;
   itemLabel: string;
+  collectionTitle?: string;
   archiveName: string;
   resultsTitle: string;
   selectPrompt: string;
@@ -54,18 +58,6 @@ export type DndleConfig<T extends DndleEntry> = {
   renderIcon: (entry?: T) => ReactNode;
   credits: ReactNode;
 };
-
-type GameStats = {
-  played: number;
-  wins: number;
-  totalGuesses: number;
-  streak: number;
-  lastWin: string;
-  distribution: number[];
-};
-
-const MAX_GUESSES = 6;
-const EMPTY_STATS: GameStats = { played: 0, wins: 0, totalGuesses: 0, streak: 0, lastWin: "", distribution: [0, 0, 0, 0, 0, 0] };
 
 export function utcDayKey(date = new Date()) {
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
@@ -104,6 +96,10 @@ export function entryOptionDisabled(used: boolean, finished: boolean) {
   return used && !finished;
 }
 
+export function buildShareRow(results: Result[]) {
+  return results.map((value) => value === "exact" ? "🟩" : value === "partial" ? "🟨" : value === "higher" ? "⬆️" : value === "lower" ? "⬇️" : "⬜").join("");
+}
+
 export function buildShareText({ brand, gameNumber, score, rows, question, action, url, relatedPrompt, relatedUrl }: {
   brand: string;
   gameNumber: number;
@@ -134,35 +130,72 @@ export function DailyDndle<T extends DndleEntry>({ config }: { config: DndleConf
   const sortedEntries = useMemo(() => [...config.entries].sort((a, b) => a.name.localeCompare(b.name)), [config]);
   const [selectedName, setSelectedName] = useState("");
   const [guesses, setGuesses] = useState<T[]>([]);
+  const [guessLimit, setGuessLimit] = useState(DEFAULT_MAX_GUESSES);
+  const [roundReady, setRoundReady] = useState(false);
+  const [newGuessName, setNewGuessName] = useState<string | null>(null);
+  const newGuessRow = useRef<HTMLDivElement>(null);
+  const archivePanel = useRef<HTMLElement>(null);
+  const resultButton = useRef<HTMLButtonElement>(null);
+  const [compactResults, setCompactResults] = useState(() => typeof window !== "undefined" && window.matchMedia("(max-width: 720px)").matches);
+  const [expandedGuess, setExpandedGuess] = useState<string | null | undefined>(undefined);
   const [showHow, setShowHow] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [shareFallback, setShareFallback] = useState("");
+  const shareTextField = useRef<HTMLTextAreaElement>(null);
   const [resultDismissed, setResultDismissed] = useState(false);
   const [showStats, setShowStats] = useState(false);
   const [showNames, setShowNames] = useState(true);
-  const [stats, setStats] = useState<GameStats>(EMPTY_STATS);
+  const [stats, setStats] = useState(() => normalizeStats());
   const [countdown, setCountdown] = useState("");
   const [tooltip, setTooltip] = useState<{ name: string; left: number; top: number } | null>(null);
-  const won = guesses.some((guess) => guess.name === target.name);
-  const finished = won || guesses.length >= MAX_GUESSES;
+  const { won, finished } = roundOutcome(guesses.map((guess) => guess.name), target.name, guessLimit);
+  const remainingGuesses = Math.max(0, guessLimit - guesses.length);
   const selectedEntry = config.entries.find((entry) => entry.name === selectedName);
+  const visibleGuesses = compactResults ? [...guesses].reverse() : guesses;
+  const expandedGuessName = expandedGuess === undefined ? guesses.at(-1)?.name : expandedGuess;
 
   useEffect(() => {
-    const saved = localStorage.getItem(`${config.storageKey}:${utcDayKey()}`);
-    if (!saved) return;
+    if (shareFallback) shareTextField.current?.focus();
+  }, [shareFallback]);
+
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 720px)");
+    const update = () => setCompactResults(media.matches);
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
+
+  useEffect(() => {
+    const dayKey = utcDayKey();
+    const saved = localStorage.getItem(`${config.storageKey}:${dayKey}`);
+    const recorded = Boolean(localStorage.getItem(`${config.storageKey}:recorded:${dayKey}`));
+    setGuessLimit(resolveGuessLimit(Number(localStorage.getItem(`${config.storageKey}:limit:${dayKey}`)), recorded));
     try {
-      const names = JSON.parse(saved) as string[];
-      setGuesses(names.map((name) => config.entries.find((entry) => entry.name === name)).filter(Boolean) as T[]);
+      const names: unknown = JSON.parse(saved || "[]");
+      if (Array.isArray(names)) setGuesses(names.map((name) => config.entries.find((entry) => entry.name === name)).filter(Boolean) as T[]);
     } catch { /* Ignore invalid local data. */ }
+    setRoundReady(true);
   }, [config]);
 
   useEffect(() => {
-    if (guesses.length) localStorage.setItem(`${config.storageKey}:${utcDayKey()}`, JSON.stringify(guesses.map((guess) => guess.name)));
-  }, [config.storageKey, guesses]);
+    if (!roundReady || !guesses.length) return;
+    const dayKey = utcDayKey();
+    localStorage.setItem(`${config.storageKey}:limit:${dayKey}`, String(guessLimit));
+    localStorage.setItem(`${config.storageKey}:${dayKey}`, JSON.stringify(guesses.map((guess) => guess.name)));
+  }, [config.storageKey, guesses, guessLimit, roundReady]);
+
+  useEffect(() => {
+    if (!newGuessName) return;
+    if (compactResults && !finished) newGuessRow.current?.querySelector<HTMLButtonElement>(".guess-summary")?.focus({ preventScroll: true });
+    newGuessRow.current?.scrollIntoView({ block: "nearest", behavior: "instant" });
+    const timer = window.setTimeout(() => setNewGuessName(null), 400);
+    return () => window.clearTimeout(timer);
+  }, [newGuessName]);
 
   useEffect(() => {
     try {
       const saved = localStorage.getItem(`${config.storageKey}:stats`);
-      if (saved) setStats({ ...EMPTY_STATS, ...JSON.parse(saved) });
+      if (saved) setStats(normalizeStats(JSON.parse(saved)));
     } catch { /* Ignore invalid local data. */ }
     const initialDay = utcDayKey();
     const update = () => {
@@ -181,42 +214,37 @@ export function DailyDndle<T extends DndleEntry>({ config }: { config: DndleConf
   }, [config.storageKey]);
 
   useEffect(() => {
-    if (!finished) return;
+    if (!roundReady || !finished) return;
     const recordKey = `${config.storageKey}:recorded:${utcDayKey()}`;
     if (localStorage.getItem(recordKey)) return;
-    let current = EMPTY_STATS;
-    try { current = { ...EMPTY_STATS, ...JSON.parse(localStorage.getItem(`${config.storageKey}:stats`) || "{}") }; } catch { /* Use defaults. */ }
+    let current = normalizeStats();
+    try { current = normalizeStats(JSON.parse(localStorage.getItem(`${config.storageKey}:stats`) || "{}")); } catch { /* Use defaults. */ }
     const yesterday = new Date(Date.now() - 86400000);
     const yesterdayKey = utcDayKey(yesterday);
-    const next: GameStats = {
-      ...current,
-      played: current.played + 1,
-      wins: current.wins + (won ? 1 : 0),
-      totalGuesses: current.totalGuesses + (won ? guesses.length : 0),
-      streak: won ? (current.lastWin === yesterdayKey ? current.streak + 1 : 1) : 0,
-      lastWin: won ? utcDayKey() : current.lastWin,
-      distribution: current.distribution.map((value, index) => value + (won && index === guesses.length - 1 ? 1 : 0)),
-    };
+    const next = nextGameStats(current, { won, guessCount: guesses.length, dayKey: utcDayKey(), yesterdayKey });
     localStorage.setItem(`${config.storageKey}:stats`, JSON.stringify(next));
     localStorage.setItem(recordKey, "1");
     setStats(next);
-  }, [config.storageKey, finished, guesses.length, won]);
+  }, [config.storageKey, finished, guesses.length, won, roundReady]);
 
   function submit() {
-    if (finished) return;
+    if (!roundReady || finished) return;
     const guess = config.entries.find((entry) => entry.name.toLowerCase() === selectedName.trim().toLowerCase());
     if (!guess || guesses.some((entry) => entry.name === guess.name)) return;
     setGuesses((current) => [...current, guess]);
+    setNewGuessName(guess.name);
+    setExpandedGuess(guess.name);
+    setTooltip(null);
     setSelectedName("");
-    if (guess.name === target.name || guesses.length + 1 >= MAX_GUESSES) setResultDismissed(false);
+    if (guess.name === target.name || guesses.length + 1 >= guessLimit) setResultDismissed(false);
   }
 
   async function share() {
-    const rows = guesses.map((guess) => comparison(guess, target, config.traits).map((value) => value === "exact" ? "🟩" : value === "partial" ? "🟨" : value === "higher" ? "⬆️" : value === "lower" ? "⬇️" : "⬛").join(""));
+    const rows = guesses.map((guess) => buildShareRow(comparison(guess, target, config.traits)));
     const text = buildShareText({
       brand: config.brand,
       gameNumber,
-      score: `${won ? guesses.length : "X"}/${MAX_GUESSES}`,
+      score: `${won ? guesses.length : "X"}/${guessLimit}`,
       rows,
       question: config.shareQuestion,
       action: config.shareAction,
@@ -224,15 +252,27 @@ export function DailyDndle<T extends DndleEntry>({ config }: { config: DndleConf
       relatedPrompt: config.relatedGame.prompt,
       relatedUrl: config.relatedGame.url,
     });
-    await navigator.clipboard.writeText(text);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1800);
+    setCopied(false);
+    if (await tryCopyText(text, navigator.clipboard)) {
+      setShareFallback("");
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    } else {
+      setShareFallback(text);
+      shareTextField.current?.focus();
+    }
   }
 
   function showTooltip(element: HTMLElement, name: string) {
     const rect = element.getBoundingClientRect();
     const left = Math.max(110, Math.min(window.innerWidth - 110, rect.left + rect.width / 2));
     setTooltip({ name, left, top: rect.top - 8 });
+  }
+
+  function showEntryTooltip(element: HTMLElement, name: string) {
+    const label = element.querySelector("strong");
+    if (!showNames || (label && (label.scrollHeight > label.clientHeight || label.scrollWidth > label.clientWidth))) showTooltip(element, name);
+    else setTooltip(null);
   }
 
   const gridStyle = { "--trait-count": config.traits.length + 1 } as CSSProperties;
@@ -243,8 +283,7 @@ export function DailyDndle<T extends DndleEntry>({ config }: { config: DndleConf
         <a className="brand" href="#top" aria-label={`${config.brand} home`}><span className="brand-rune">{config.brandIconUrl ? <img src={config.brandIconUrl} alt="" /> : config.brandRune}</span></a>
         <div className="game-tagline">{config.tagline}</div>
         <div className="header-actions">
-          <div className="attempts"><strong>{guesses.length}</strong><span>/ {MAX_GUESSES}</span></div>
-          {finished && <button className="icon-button results-button" onClick={() => setResultDismissed(false)} aria-label="Open result and statistics">RESULT</button>}
+          {finished && <button className="icon-button results-button" ref={resultButton} onClick={() => setResultDismissed(false)} aria-label="Open result and statistics">RESULT</button>}
           <button className="icon-button" onClick={() => setShowHow(true)} aria-label="Show game rules">?</button>
         </div>
       </header>
@@ -252,45 +291,66 @@ export function DailyDndle<T extends DndleEntry>({ config }: { config: DndleConf
       {tooltip && <div id="entry-tooltip" className="spell-tooltip" role="tooltip" style={{ left: tooltip.left, top: tooltip.top }}>{tooltip.name}</div>}
 
       <section className="play-shell">
-        <article className="archive-panel">
-          <div className="section-head"><div><span className="tiny-label">CHOOSE A</span><h2>{config.itemLabel}</h2></div><button className="name-toggle" type="button" aria-pressed={showNames} onClick={() => { setShowNames((current) => !current); setTooltip(null); }}><span>Names</span><strong>{showNames ? "On" : "Off"}</strong></button></div>
+        <article className="archive-panel" ref={archivePanel} tabIndex={-1} aria-label={config.collectionTitle || config.itemLabel}>
+          <div className="section-head"><h2>{config.collectionTitle || config.itemLabel}</h2><button className="name-toggle" type="button" aria-pressed={showNames} onClick={() => { setShowNames((current) => !current); setTooltip(null); }}>Show names</button></div>
           <div className={`spell-grid${showNames ? "" : " names-hidden"}`}>
             {sortedEntries.map((entry) => {
               const used = guesses.some((guess) => guess.name === entry.name);
               const selected = selectedName === entry.name;
               const found = won && entry.name === target.name;
-              return <button className={`spell-option${selected ? " selected" : ""}${used ? " used" : ""}${found ? " found" : ""}${finished ? " locked" : ""}`} key={entry.name} onClick={() => { if (!used && !finished) setSelectedName(entry.name); }} onMouseEnter={showNames ? undefined : (event) => showTooltip(event.currentTarget, entry.name)} onMouseLeave={showNames ? undefined : () => setTooltip(null)} onFocus={showNames ? undefined : (event) => showTooltip(event.currentTarget, entry.name)} onBlur={showNames ? undefined : () => setTooltip(null)} disabled={entryOptionDisabled(used, finished)} aria-disabled={used || finished} aria-describedby={!showNames && tooltip?.name === entry.name ? "entry-tooltip" : undefined} aria-label={entry.name} aria-pressed={selected}><span className="option-sigil">{config.renderIcon(entry)}</span>{showNames && <strong>{entry.name}</strong>}</button>;
+              return <button className={`spell-option${selected ? " selected" : ""}${used ? " used" : ""}${found ? " found" : ""}${finished ? " locked" : ""}`} key={entry.name} onClick={() => { if (!used && !finished) setSelectedName(entry.name); }} onMouseEnter={(event) => showEntryTooltip(event.currentTarget, entry.name)} onMouseLeave={() => setTooltip(null)} onFocus={(event) => showEntryTooltip(event.currentTarget, entry.name)} onBlur={() => setTooltip(null)} disabled={entryOptionDisabled(used, finished)} aria-disabled={used || finished} aria-describedby={tooltip?.name === entry.name ? "entry-tooltip" : undefined} aria-label={entry.name} aria-pressed={selected}><span className="option-sigil">{config.renderIcon(entry)}</span>{showNames && <strong>{entry.name}</strong>}</button>;
             })}
           </div>
         </article>
 
         <div className="game-console">
           <section className={`selection-stage${selectedEntry ? " has-selection" : ""}`}>
-            <div className="selected-sigil" aria-hidden="true">{config.renderIcon(selectedEntry)}</div>
-            <div className="selected-copy"><span className="tiny-label">YOUR GUESS</span><h1>{selectedEntry?.name || `Choose a ${config.itemLabel.toLowerCase()}`}</h1><p>{selectedEntry ? config.readyPrompt : config.selectPrompt}</p></div>
-            <button className="primary submit-guess" onClick={submit} disabled={!selectedName || finished}>{config.actionLabel}</button>
+            <div className={`selected-sigil${selectedEntry ? "" : " is-empty"}`} aria-hidden="true">{selectedEntry ? config.renderIcon(selectedEntry) : <span className="placeholder-glyph">{config.renderIcon()}</span>}</div>
+            <div className="selected-copy"><h1>{selectedEntry?.name || `Choose a ${config.itemLabel.toLowerCase()}`}</h1><p>{selectedEntry ? config.readyPrompt : config.selectPrompt}</p></div>
+            <button className="primary submit-guess" onClick={submit} disabled={!roundReady || !selectedName || finished}>{config.actionLabel}</button>
           </section>
 
           <article className="results-panel" aria-label="Your guesses">
-            <div className="section-head results-head"><div><span className="tiny-label">{config.archiveName} #{gameNumber}</span><h2>{config.resultsTitle}</h2></div></div>
-            <div className="table-scroll">
+            <div className="section-head results-head"><h2>{config.resultsTitle}</h2><span className="round-label" aria-label={`Daily puzzle ${gameNumber}`}>#{gameNumber}</span></div>
+            {guesses.length > 0 && !finished && <button className="primary next-guess-button" type="button" onClick={() => {
+              setTooltip(null);
+              archivePanel.current?.focus({ preventScroll: true });
+              archivePanel.current?.scrollIntoView({ block: "start", behavior: "instant" });
+            }}>Choose next {config.itemLabel.toLowerCase()} ↑</button>}
+            {guesses.length === 0 ? <p className="results-empty">Make your first guess to reveal the clues.</p> : <div className="table-scroll">
               <div className="table-head" style={gridStyle}><span>{config.itemLabel}</span>{config.traits.map((trait) => <span key={trait.key}>{trait.label}</span>)}</div>
               <div className="rows">
-                {guesses.map((guess, index) => {
+                {visibleGuesses.map((guess) => {
                   const results = comparison(guess, target, config.traits);
                   const solved = guess.name === target.name;
-                  return <div className={`result-row${solved ? " solved" : ""}`} key={guess.name} style={{ ...gridStyle, animationDelay: `${index * 40}ms` }}><div className={`spell-cell${solved ? " exact" : ""}`} role="img" tabIndex={0} aria-label={guess.name} aria-describedby={tooltip?.name === guess.name ? "entry-tooltip" : undefined} onMouseEnter={(event) => showTooltip(event.currentTarget, guess.name)} onMouseLeave={() => setTooltip(null)} onFocus={(event) => showTooltip(event.currentTarget, guess.name)} onBlur={() => setTooltip(null)}><span className="row-sigil">{config.renderIcon(guess)}</span><span className="sr-only">{guess.name}</span></div>{config.traits.map((trait, traitIndex) => <Cell key={trait.key} label={trait.mobileLabel || trait.label} value={trait.value(guess)} result={results[traitIndex]} />)}</div>;
+                  const number = guesses.indexOf(guess) + 1;
+                  const expanded = guess.name === expandedGuessName;
+                  const traitsId = `${config.id}-guess-${number}`;
+                  return <div className={`result-row${solved ? " solved" : ""}${expanded ? "" : " is-collapsed"}${guess.name === newGuessName ? " is-new" : ""}`} key={guess.name} ref={guess.name === newGuessName ? newGuessRow : undefined} style={gridStyle}>
+                    <button className="guess-summary" type="button" aria-expanded={expanded} aria-controls={traitsId} onClick={() => { setExpandedGuess(expanded ? null : guess.name); setTooltip(null); }}>
+                      <span className="row-sigil" aria-hidden="true">{config.renderIcon(guess)}</span>
+                      <span className="guess-summary-name">{guess.name}</span>
+                      <span className="guess-number">#{number}</span>
+                      <span aria-hidden="true">{expanded ? "−" : "+"}</span>
+                    </button>
+                    <div className={`spell-cell${solved ? " exact" : ""}`} role="img" tabIndex={0} aria-label={guess.name} aria-describedby={tooltip?.name === guess.name ? "entry-tooltip" : undefined} onMouseEnter={(event) => showTooltip(event.currentTarget, guess.name)} onMouseLeave={() => setTooltip(null)} onFocus={(event) => showTooltip(event.currentTarget, guess.name)} onBlur={() => setTooltip(null)}><span className="row-sigil">{config.renderIcon(guess)}</span><span className="sr-only">{guess.name}</span></div>
+                    <div className="guess-traits" id={traitsId}>{config.traits.map((trait, traitIndex) => <Cell key={trait.key} label={trait.mobileLabel || trait.label} value={trait.value(guess)} result={results[traitIndex]} />)}</div>
+                  </div>;
                 })}
-                {Array.from({ length: Math.max(0, MAX_GUESSES - guesses.length) }).map((_, index) => <div className="empty-row" style={gridStyle} key={index}><span>{guesses.length + index + 1}</span>{config.traits.map((trait) => <i key={trait.key} />)}</div>)}
               </div>
-            </div>
+            </div>}
           </article>
+          <p className="guesses-remaining" role="status">{won ? `Solved in ${guesses.length} ${guesses.length === 1 ? "guess" : "guesses"}` : remainingGuesses ? `${remainingGuesses} ${remainingGuesses === 1 ? "guess" : "guesses"} remaining` : "No guesses remaining"}</p>
         </div>
       </section>
 
-      {showHow && <div className="modal-backdrop" onMouseDown={() => setShowHow(false)}><div className="modal" role="dialog" aria-modal="true" aria-labelledby="how-title" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setShowHow(false)} aria-label="Close">×</button><div className="panel-kicker">HOW TO PLAY</div><h2 id="how-title">{config.howTitle}</h2><p className="how-intro">{config.howIntro}</p><div className="how-steps">{config.howSteps.map((step, index) => <div className="how-step" key={step}><strong>{index + 1}</strong><span>{step}</span></div>)}</div><div className="legend modal-legend"><span><i className="swatch exact" />Exact</span><span><i className="swatch partial" />Partial</span><span><i className="swatch wrong" />No match</span></div><p className="arrow-help">Arrows for {config.arrowTraits} point toward the target.</p><div className="credits"><strong>CONTENT &amp; ICON CREDITS</strong>{config.credits}</div></div></div>}
+      {showHow && <GameDialog className="modal-backdrop" labelledBy="how-title" onClose={() => setShowHow(false)} closeOnBackdrop><div className="modal"><button className="modal-close" onClick={() => setShowHow(false)} aria-label="Close">×</button><div className="panel-kicker">HOW TO PLAY</div><h2 id="how-title">{config.howTitle}</h2><p className="how-intro">{config.howIntro}</p><div className="how-steps">{config.howSteps.map((step, index) => <div className="how-step" key={step}><strong>{index + 1}</strong><span>{step}</span></div>)}</div><div className="legend modal-legend"><span><i className="swatch exact" />Exact</span><span><i className="swatch partial" />Partial</span><span><i className="swatch wrong" />No match</span></div><p className="arrow-help">Arrows for {config.arrowTraits} point toward the target.</p><div className="credits"><strong>CONTENT &amp; ICON CREDITS</strong>{config.credits}</div></div></GameDialog>}
 
-      {finished && !resultDismissed && <div className="result-backdrop" role="presentation"><section className="result-popup" role="dialog" aria-modal="true" aria-labelledby="result-title"><button className="popup-close" onClick={() => setResultDismissed(true)} aria-label="Close result">×</button><span className="reveal-sigil">{config.renderIcon(target)}</span><div className="result-kicker">{won ? config.successKicker(guesses.length) : config.failureKicker}</div><h2 id="result-title">{target.name}</h2><p>{config.resultSummary(target)}</p><div className="share-grid" style={{ gridTemplateColumns: `repeat(${config.traits.length}, 24px)` }} aria-label="Your result">{guesses.flatMap((guess) => comparison(guess, target, config.traits).map((value, index) => <i key={`${guess.name}-${index}`} className={`share-dot ${value}`} />))}</div><div className="next-game"><span>{config.nextLabel}</span><strong>{countdown}</strong></div><div className="result-actions"><button className="primary" onClick={share}>{copied ? "COPIED ✓" : "SHARE RESULT"}</button><button className="stats-button" onClick={() => setShowStats((value) => !value)}>{showStats ? "HIDE" : "STATISTICS"}</button></div>{showStats && <div className="stats-drawer"><div className="stat"><strong>{stats.played}</strong><span>PLAYED</span></div><div className="stat"><strong>{stats.played ? Math.round((stats.wins / stats.played) * 100) : 0}%</strong><span>WON</span></div><div className="stat"><strong>{stats.wins ? (stats.totalGuesses / stats.wins).toFixed(1) : "–"}</strong><span>AVG. GUESSES</span></div><div className="stat"><strong>{stats.streak}</strong><span>STREAK</span></div><div className="distribution">{stats.distribution.map((value, index) => <div key={index}><span>{index + 1}</span><i style={{ width: `${Math.max(8, stats.wins ? (value / Math.max(...stats.distribution, 1)) * 100 : 8)}%` }}>{value}</i></div>)}</div></div>}</section></div>}
+      {finished && !resultDismissed && <GameDialog className="result-backdrop" labelledBy="result-title" onClose={() => setResultDismissed(true)} returnFocus={() => resultButton.current}><section className="result-popup"><button className="popup-close" onClick={() => setResultDismissed(true)} aria-label="Close result">×</button><span className="reveal-sigil">{config.renderIcon(target)}</span><div className="result-kicker">{won ? config.successKicker(guesses.length) : config.failureKicker}</div><h2 id="result-title">{target.name}</h2><p>{config.resultSummary(target)}</p><div className="share-grid" style={{ gridTemplateColumns: `repeat(${config.traits.length}, 24px)` }} aria-label="Your result">{guesses.flatMap((guess) => comparison(guess, target, config.traits).map((value, index) => <i key={`${guess.name}-${index}`} className={`share-dot ${value}`} />))}</div><div className="next-game"><span>{config.nextLabel}</span><strong>{countdown}</strong></div><div className="result-actions"><button className="primary" onClick={share}>{copied ? "COPIED ✓" : "SHARE RESULT"}</button><button className="stats-button" onClick={() => setShowStats((value) => !value)}>{showStats ? "HIDE" : "STATISTICS"}</button></div>{shareFallback && <div className="share-fallback">
+  <p id={`${config.id}-copy-help`} role="alert">Automatic copying wasn't available. Copy your result below.</p>
+  <label htmlFor={`${config.id}-share-text`}>Your result</label>
+  <textarea id={`${config.id}-share-text`} ref={shareTextField} readOnly value={shareFallback} aria-describedby={`${config.id}-copy-help`} onFocus={(event) => event.currentTarget.select()} />
+</div>}{showStats && <div className="stats-drawer"><div className="stat"><strong>{stats.played}</strong><span>PLAYED</span></div><div className="stat"><strong>{stats.played ? Math.round((stats.wins / stats.played) * 100) : 0}%</strong><span>WON</span></div><div className="stat"><strong>{stats.wins ? (stats.totalGuesses / stats.wins).toFixed(1) : "–"}</strong><span>AVG. GUESSES</span></div><div className="stat"><strong>{stats.streak}</strong><span>STREAK</span></div><div className="distribution">{stats.distribution.map((value, index) => <div key={index}><span>{index + 1}</span><i style={{ width: `${Math.max(8, stats.wins ? (value / Math.max(...stats.distribution, 1)) * 100 : 8)}%` }}>{value}</i></div>)}</div></div>}</section></GameDialog>}
       <footer className="site-footer">A project by <a href="https://sirrio.de/" target="_blank" rel="noreferrer">sirrio.de</a><span aria-hidden="true">·</span><a href="https://sirrio.de/impressum/" target="_blank" rel="noreferrer">Impressum</a><span aria-hidden="true">·</span><a href="https://sirrio.de/datenschutz/" target="_blank" rel="noreferrer">Datenschutz</a></footer>
     </main>
   );

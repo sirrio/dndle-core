@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildShareText, compareList, compareNumber, compareText, dailyGameNumber, dailyTarget, entryOptionDisabled } from "../src/index";
+import { buildShareRow, buildShareText, compareList, compareNumber, compareText, dailyGameNumber, dailyTarget, entryOptionDisabled } from "../src/index";
 
 const daily = { startUtc: [2026, 0, 1] as [number, number, number], multiplier: 17, offset: 5 };
 
@@ -24,12 +24,17 @@ test("comparison helpers encode exact, partial and ordered feedback", () => {
   assert.equal(compareNumber(4, 3), "lower");
 });
 
+test("share rows use light squares for misses and preserve match colors and arrows", () => {
+  assert.equal(buildShareRow(["exact", "partial", "wrong", "higher", "lower", "wrong", "exact"]), "🟩🟨⬜⬆️⬇️⬜🟩");
+  assert.equal(buildShareRow([]), "");
+});
+
 test("share text links the current game and promotes its sibling game", () => {
   const text = buildShareText({
     brand: "CRITTERDLE",
     gameNumber: 224,
     score: "6/6",
-    rows: ["🟩⬛", "🟩🟩"],
+    rows: [buildShareRow(["exact", "wrong"]), buildShareRow(["exact", "exact"])],
     question: "Can you track today's monster?",
     action: "Join the hunt!",
     url: "https://sirrio.github.io/critterdle/",
@@ -38,6 +43,7 @@ test("share text links the current game and promotes its sibling game", () => {
   });
 
   assert.match(text, /^\[CRITTERDLE\]\(https:\/\/sirrio\.github\.io\/critterdle\/\) #224 6\/6/);
+  assert.ok(text.includes("\n🟩⬜\n🟩🟩\n\n"));
   assert.match(text, /\[Join the hunt!\]\(https:\/\/sirrio\.github\.io\/critterdle\/\)/);
   assert.match(text, / · \[Or search the Arcane Archive for spells\?\]\(<https:\/\/sirrio\.github\.io\/spelldle\/>\)$/);
 });
